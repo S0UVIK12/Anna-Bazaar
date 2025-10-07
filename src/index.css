@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  color: #111827; /* gray-900 */
+  background-color: #ffffff; /* default light */
+}
+
+:root.dark body {
+  color: #e5e7eb; /* gray-200 */
+  background-color: #111827; /* gray-900 */
+}
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background-color: #9ca3af; border-radius: 9999px; }
+*::-webkit-scrollbar-track { background-color: transparent; }
