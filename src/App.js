@@ -33,8 +33,11 @@ const FarmerBuyerPlatform = () => {
   const [sortBy, setSortBy] = useState('relevance');
   const [cart, setCart] = useState([]); // {id, listingId, listing, quantity}
   const [orders, setOrders] = useState([]); // {id, listingId, listing, buyerId, farmerId, quantity, price, status, createdAt}
+  const [advancedOrderId, setAdvancedOrderId] = useState(null); // for farmer advanced order view
+  const [cancelReason, setCancelReason] = useState(''); // reason for cancellation by farmer
 
   const [orderStatusFilter, setOrderStatusFilter] = useState('all'); // all|pending|confirmed|shipped|delivered|cancelled
+  const [statusPickerOrderId, setStatusPickerOrderId] = useState(null); // open status picker for this order
 
   const categories = ['All', 'Vegetables', 'Fruits', 'Grains', 'Dairy', 'Spices'];
 
@@ -195,6 +198,24 @@ const FarmerBuyerPlatform = () => {
     setCart([]);
   };
 
+  const handleAdvanceOrderStatus = (orderId) => {
+    setOrders(orders.map(o => {
+      if (o.id !== orderId) return o;
+      const st = normalizeStatus(o.status);
+      if (st === 'delivered' || st === 'cancelled') return o;
+      return { ...o, status: nextStatus(o.status) };
+    }));
+  };
+
+  const handleSetOrderStatus = (orderId, newStatus) => {
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    setStatusPickerOrderId(null);
+  };
+
+  const handleCancelOrder = (orderId) => {
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'cancelled', cancelReason: 'Cancelled by buyer' } : o));
+  };
+
   const handleMarkOrderCompleted = (id) => {
     setOrders(orders.map(o => o.id === id ? { ...o, status: 'completed' } : o));
   };
@@ -207,6 +228,12 @@ const FarmerBuyerPlatform = () => {
       const newItem = { id: Date.now(), listingId: listing.id, listing, quantity: 1 };
       setCart([...cart, newItem]);
     }
+  };
+
+  const handleFarmerCancelOrder = (orderId, reason) => {
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'cancelled', cancelReason: (reason && reason.trim()) || 'Cancelled by farmer' } : o));
+    setAdvancedOrderId(null);
+    setCancelReason('');
   };
 
   const handleImageChange = (file) => {
@@ -561,11 +588,7 @@ const FarmerBuyerPlatform = () => {
               {listings.filter(l => l.farmerId === currentUser).map(listing => (
                 <div key={listing.id} className="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-xl transition-shadow p-0 overflow-hidden group animate-slideUp">
                   <div className="relative h-36 sm:h-44">
-                    {isImageUrl(listing.image) ? (
-                      <img src={listing.image} alt={listing.product} className="w-full h-40 object-cover rounded mb-3" />
-                    ) : (
-                      <div className="text-4xl mb-3">{listing.image}</div>
-                    )}
+                    <img src={imageForListing(listing)} alt={listing.product} className="w-full h-full object-cover" />
                     <div className="absolute top-2 left-2 bg-white/90 dark:bg-gray-900/70 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded">₹{listing.price}/{listing.unit}</div>
                   </div>
                   <div className="p-5">
@@ -667,8 +690,14 @@ const FarmerBuyerPlatform = () => {
                         <p className="text-sm text-gray-600 dark:text-gray-300">Price: {formatCurrency(o.price)}/{o.listing.unit}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300">Buyer: {o.buyerId}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300">Farmer: {o.listing.farmerName}</p>
+                        {normalizeStatus(o.status) === 'cancelled' && o.cancelReason && (
+                          <p className="text-sm text-red-600 mt-1">Reason: {o.cancelReason}</p>
+                        )}
                         {userType === 'farmer' && normalizeStatus(o.status) !== 'delivered' && normalizeStatus(o.status) !== 'cancelled' && (
-                          <button onClick={() => handleAdvanceOrderStatus(o.id)} className="mt-3 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">Advance Status</button>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button onClick={() => setStatusPickerOrderId(o.id)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">Advance Status</button>
+                            <button onClick={() => setAdvancedOrderId(o.id)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Advanced</button>
+                          </div>
                         )}
                         {userType === 'buyer' && normalizeStatus(o.status) === 'pending' && (
                           <button onClick={() => handleCancelOrder(o.id)} className="mt-3 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded">Cancel Order</button>
@@ -822,7 +851,7 @@ const FarmerBuyerPlatform = () => {
                       {cart.map(item => (
                         <div key={item.id} className="py-4 flex items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
-                            <div className="text-3xl">{item.listing.image}</div>
+                            <img src={imageForListing(item.listing)} alt={item.listing.product} className="w-16 h-16 object-cover rounded" />
                             <div>
                               <p className="font-semibold text-gray-800 dark:text-white">{item.listing.product}</p>
                               <p className="text-sm text-gray-600 dark:text-gray-300">₹{item.listing.price}/{item.listing.unit} • {item.listing.farmerName}</p>
@@ -1001,6 +1030,116 @@ const FarmerBuyerPlatform = () => {
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Advanced Order Details (Farmer) */}
+        {userType === 'farmer' && advancedOrderId && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg overflow-hidden animate-slideUp">
+              {(() => {
+                const o = orders.find(or => or.id === advancedOrderId);
+                if (!o) return null;
+                return (
+                  <div>
+                    <div className="bg-green-600 text-white p-4 flex items-center justify-between">
+                      <h3 className="text-lg font-bold">Order Details</h3>
+                      <button onClick={() => setAdvancedOrderId(null)} className="text-xl font-bold">✕</button>
+                    </div>
+                    <div className="p-5 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <img src={imageForListing(o.listing)} alt={o.listing.product} className="w-16 h-16 object-cover rounded" />
+                        <div>
+                          <p className="font-semibold text-gray-800 dark:text-white">{o.listing.product}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">Buyer: {o.buyerId}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">Farmer: {o.listing.farmerName}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-200">Quantity: <span className="font-semibold">{o.quantity} {o.listing.unit}</span></p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200">Unit Price: <span className="font-semibold">{formatCurrency(o.listing.price)}</span></p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200">Total: <span className="font-semibold">{formatCurrency(o.price)}</span></p>
+                      <p className="text-sm text-gray-700 dark:text-gray-200">Status: <span className={`px-2 py-0.5 rounded-full text-xs ${getStatusClasses(o.status)}`}>{normalizeStatus(o.status)}</span></p>
+
+                      {normalizeStatus(o.status) !== 'delivered' && normalizeStatus(o.status) !== 'cancelled' && (
+                        <div className="mt-4 space-y-2">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Cancel reason (optional)</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <select
+                              className="border rounded px-3 py-2 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100"
+                              value={cancelReason}
+                              onChange={(e) => setCancelReason(e.target.value)}
+                            >
+                              <option value="">Select a common reason…</option>
+                              <option>Shortage in supply</option>
+                              <option>Quality issues</option>
+                              <option>Logistics delay</option>
+                              <option>Pricing error</option>
+                              <option>Inventory mismatch</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={cancelReason}
+                              onChange={(e) => setCancelReason(e.target.value)}
+                              placeholder="Or type a custom reason"
+                              className="border rounded px-3 py-2 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100"
+                            />
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={() => setStatusPickerOrderId(o.id)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded">Advance Status</button>
+                            <button onClick={() => handleFarmerCancelOrder(o.id, cancelReason)} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded">Cancel Order</button>
+                          </div>
+                        </div>
+                      )}
+                      {normalizeStatus(o.status) === 'cancelled' && o.cancelReason && (
+                        <p className="text-sm text-red-600">Cancelled: {o.cancelReason}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* Status Picker Modal (Farmer) */}
+        {userType === 'farmer' && statusPickerOrderId && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-slideUp">
+              {(() => {
+                const o = orders.find(or => or.id === statusPickerOrderId);
+                if (!o) return null;
+                const st = normalizeStatus(o.status);
+                const options = ['confirmed','shipped','delivered'].filter(s => {
+                  // Only allow advancing forward from current state
+                  const order = ['pending','confirmed','shipped','delivered'];
+                  const curIdx = order.indexOf(st);
+                  const targetIdx = order.indexOf(s);
+                  return targetIdx > curIdx;
+                });
+                return (
+                  <div>
+                    <div className="bg-green-600 text-white p-4 flex items-center justify-between">
+                      <h3 className="text-lg font-bold">Set Order Status</h3>
+                      <button onClick={() => setStatusPickerOrderId(null)} className="text-xl font-bold">✕</button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <p className="text-sm text-gray-700 dark:text-gray-200">Current: <span className={`px-2 py-0.5 rounded-full text-xs ${getStatusClasses(o.status)}`}>{st}</span></p>
+                      {options.length === 0 ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-300">No further statuses available.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {options.map(opt => (
+                            <button key={opt} onClick={() => handleSetOrderStatus(o.id, opt)} className="w-full text-left px-3 py-2 border rounded hover:bg-gray-50 dark:hover:bg-gray-700">
+                              {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
